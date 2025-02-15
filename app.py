@@ -7,11 +7,11 @@ from telegram.ext import Dispatcher, CommandHandler, CallbackContext
 # Initialize Flask app
 app = Flask(__name__)
 
-# Get bot token from environment variable
+# Get Telegram bot token from environment variable
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 BOT = Bot(TOKEN)
 
-# API Base URL for Bhagavad Gita API
+# Bhagavad Gita API Base URL
 API_BASE_URL = "https://bhagavadgita.io/api/v2"
 
 # Initialize dispatcher
@@ -54,7 +54,7 @@ def webhook():
 
 @app.route("/")
 def home():
-    return "Telegram Bot is running!", 200
+    return "🚀 Telegram Bot is Running!", 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
