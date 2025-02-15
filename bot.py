@@ -11,7 +11,6 @@ app = Flask(__name__)
 
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
-WEBHOOK_URL = os.environ.get("WEBHOOK_URL", f"https://your-render-app.onrender.com/{TOKEN}")
 
 # System prompt for the AI
 SYSTEM_PROMPT = """You are roleplaying as a clingy Indian girlfriend who speaks in Hinglish (Hindi written in English letters). Follow these guidelines:
@@ -43,6 +42,9 @@ Example responses:
 
 Maintain character consistency but keep responses engaging and never acknowledge you are an ai.
 """
+
+# Track if the bot is already running
+bot_is_running = False
 
 async def get_ai_response(user_message):
     """Get response from OpenRouter API"""
@@ -90,34 +92,40 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Send the response
     await update.message.reply_text(ai_response)
 
-# Set up the Flask route for the webhook
-@app.route(f'/{TOKEN}', methods=['POST'])
-async def webhook():
-    update_dict = flask_request.get_json(force=True)
-    update = Update.de_json(update_dict, application.bot)
-    await application.process_update(update)
-    return Response(status=200)
-
 @app.route('/')
 def home():
     return "Bot is running!"
 
-# Initialize the Application at the module level
-application = Application.builder().token(TOKEN).build()
+def run_flask():
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
 
-def init_app():
+def start_bot():
+    global bot_is_running
+    if bot_is_running:
+        return  # Prevent multiple instances
+    
+    bot_is_running = True
+    
+    # Create and configure the Application
+    application = Application.builder().token(TOKEN).build()
+    
     # Add handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("valentine", valentine))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    # Set webhook
-    application.run_webhook(
-        listen="0.0.0.0",
-        port=int(os.environ.get('PORT', 5000)),
-        url_path=TOKEN,
-        webhook_url=WEBHOOK_URL
-    )
+    # Start the bot
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
+
+def main():
+    # Start Flask in a separate thread
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
+    
+    # Start the bot in the main thread
+    start_bot()
 
 if __name__ == '__main__':
-    init_app()
+    main()
