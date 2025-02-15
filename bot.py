@@ -2,13 +2,17 @@ import os
 from flask import Flask, request as flask_request
 import requests
 import json
+import google.generativeai as genai
 
 app = Flask(__name__)
 
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
 PORT = int(os.environ.get("PORT", 5000))
 RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
+
+# Configure Google AI
+genai.configure(api_key=GOOGLE_API_KEY)
 
 # System prompt for the AI
 SYSTEM_PROMPT = """You are roleplaying as a clingy Indian girlfriend who speaks in Hinglish (Hindi written in English letters). Follow these guidelines:
@@ -28,7 +32,7 @@ Speaking Style:
 - Use typical Indian texting style like "hehe", "hmm"
 
 Response Guidelines:
-- Sometimes go nsfw to flirt
+- flirt alot
 - Focus on romance
 - Show caring and affection in a adult way
 - Always reply to user's questions 
@@ -42,32 +46,26 @@ Maintain character consistency but keep responses engaging and never acknowledge
 """
 
 def get_ai_response(user_message):
-    """Get response from OpenRouter API"""
-    url = "https://openrouter.ai/api/v1/chat/completions"
-    
-    headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json",
-    }
-    
-    data = {
-        "model": "cognitivecomputations/dolphin3.0-r1-mistral-24b:free",
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_message}
-        ]
-    }
-    
+    """Get response from Gemini API"""
     try:
-        response = requests.post(url, headers=headers, json=data)
-        print(f"Full API response: {response.text}")
-        response_json = response.json()
+        # Initialize the model
+        model = genai.GenerativeModel('gemini-2.0-flash')
         
-        if response_json.get('choices') and len(response_json['choices']) > 0:
-            return response_json['choices'][0]['message']['content']
+        # Create chat
+        chat = model.start_chat(history=[])
+        
+        # Add system prompt
+        chat.send_message(SYSTEM_PROMPT)
+        
+        # Get response
+        response = chat.send_message(user_message)
+        
+        if response.text:
+            return response.text
         else:
-            print(f"Unexpected response structure: {response_json}")
+            print("Empty response from Gemini")
             return "Hmm, kuch problem hai... Can you message me later? 🥺"
+            
     except Exception as e:
         print(f"Error getting AI response: {e}")
         return "Arey baby, something went wrong. Try again? ❤️"
