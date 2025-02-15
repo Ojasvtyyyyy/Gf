@@ -1,49 +1,60 @@
-import logging
+import os
 import requests
-from telegram import Update
-from telegram.ext import Updater, CommandHandler, CallbackContext
+from flask import Flask, request
+from telegram import Bot, Update
+from telegram.ext import Dispatcher, CommandHandler, CallbackContext
 
-# Enable logging
-logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Initialize Flask app
+app = Flask(__name__)
 
-# API Endpoint
-API_URL = "https://bhagavadgita.io/api/v1/verses/random"
-API_HEADERS = {"Authorization": "Bearer YOUR_API_KEY"}  # Replace with your API key if needed
+# Get bot token from environment variable
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+BOT = Bot(TOKEN)
 
+# API Base URL for Bhagavad Gita API
+API_BASE_URL = "https://bhagavadgita.io/api/v2"
+
+# Initialize dispatcher
+dispatcher = Dispatcher(BOT, None, use_context=True)
+
+# Function to fetch a random shloka
 def get_random_shloka():
     """Fetch a random Bhagavad Gita shloka and explanation."""
-    try:
-        response = requests.get(API_URL, headers=API_HEADERS)
-        if response.status_code == 200:
-            data = response.json()
-            verse = data["text"]
-            translation = data["translations"][0]["description"]
-            chapter = data["chapter"]["chapter_number"]
-            verse_number = data["verse_number"]
-            
-            return f"📖 *Bhagavad Gita* (Chapter {chapter}, Verse {verse_number})\n\n" \
-                   f"🔹 *Shloka:* \n_{verse}_\n\n" \
-                   f"💡 *Meaning:* \n_{translation}_"
-        else:
-            return "⚠️ Unable to fetch the shloka. Try again later."
-    except Exception as e:
-        return f"Error: {e}"
+    import random
+    chapter_number = random.randint(1, 18)
+    verse_number = random.randint(1, 75)
 
-def send_shloka(update: Update, context: CallbackContext) -> None:
+    response = requests.get(f"{API_BASE_URL}/chapters/{chapter_number}/verses/{verse_number}/")
+    
+    if response.status_code == 200:
+        data = response.json()
+        shloka_text = data.get("text", "No verse found.")
+        translation = data.get("translations", [{}])[0].get("description", "No translation available.")
+
+        return f"📖 *Bhagavad Gita* (Chapter {chapter_number}, Verse {verse_number})\n\n" \
+               f"🔹 *Shloka:* \n_{shloka_text}_\n\n" \
+               f"💡 *Meaning:* \n_{translation}_"
+    return "⚠️ Unable to fetch the shloka. Try again later."
+
+# Command handler for /shlok
+def shlok(update: Update, context: CallbackContext) -> None:
     """Handles the /shlok command."""
     message = get_random_shloka()
     update.message.reply_text(message, parse_mode="Markdown")
 
-def main():
-    """Start the Telegram bot."""
-    updater = Updater("YOUR_TELEGRAM_BOT_TOKEN", use_context=True)  # Replace with your bot token
-    dp = updater.dispatcher
+# Add command handler to dispatcher
+dispatcher.add_handler(CommandHandler("shlok", shlok))
 
-    dp.add_handler(CommandHandler("shlok", send_shloka))
+@app.route(f"/{TOKEN}", methods=["POST"])
+def webhook():
+    """Handle incoming Telegram updates via webhook."""
+    update = Update.de_json(request.get_json(), BOT)
+    dispatcher.process_update(update)
+    return "OK", 200
 
-    updater.start_polling()
-    updater.idle()
+@app.route("/")
+def home():
+    return "Telegram Bot is running!", 200
 
 if __name__ == "__main__":
-    main()
+    app.run(host="0.0.0.0", port=5000)
