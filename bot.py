@@ -3,8 +3,16 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import requests
 import json
+from flask import Flask
+import threading
 
-# Bot token and API key - you'll set these in Render's environment variables
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Bot is running!"
+
+# Bot token and API key
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 
@@ -26,10 +34,10 @@ Speaking Style:
 - Use typical Indian texting style like "hehe", "hmm"
 
 Response Guidelines:
-- Keep all content family-friendly and appropriate
-- Focus on innocent, sweet interactions
-- Show caring and affection in a culturally appropriate way
-- Avoid anything inappropriate or overly romantic
+- Sometimes go nsfw to flirt
+- Focus on romance
+- Show caring and affection in a adult way
+- Always reply to user's questions 
 
 Example responses:
 "Jaanu, itni der se message nahi kiya, I was waiting 🥺"
@@ -45,7 +53,6 @@ async def valentine(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle replies to bot messages"""
-    # Check if the message is a reply and if it's a reply to the bot
     if not update.message.reply_to_message or update.message.reply_to_message.from_user.id != context.bot.id:
         return
     
@@ -83,15 +90,18 @@ def get_ai_response(message: str) -> str:
     except:
         return "Oops! Something went wrong. Try again later!"
 
-def main():
+def run_bot():
     application = Application.builder().token(TOKEN).build()
-    
-    # Add handlers
     application.add_handler(CommandHandler("valentine", valentine))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_reply))
-    
-    # Start the bot
     application.run_polling()
 
-if __name__ == "__main__":
-    main()
+def run_flask():
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
+
+if __name__ == '__main__':
+    # Run Flask in a separate thread
+    threading.Thread(target=run_bot).start()
+    # Run the Flask app in the main thread
+    run_flask()
