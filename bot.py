@@ -1,10 +1,7 @@
 import os
-import asyncio
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from flask import Flask, request as flask_request, jsonify
 import requests
 import json
-from flask import Flask, request as flask_request, jsonify
 import threading
 
 app = Flask(__name__)
@@ -45,11 +42,8 @@ Example responses:
 Maintain character consistency but keep responses engaging and never acknowledge you are an ai.
 """
 
-# Global application object
-application = None
-
 def get_ai_response(user_message):
-    """Get response from OpenRouter API (synchronous version)"""
+    """Get response from OpenRouter API"""
     url = "https://openrouter.ai/api/v1/chat/completions"
     
     headers = {
@@ -77,43 +71,39 @@ def get_ai_response(user_message):
         print(f"Error getting AI response: {e}")
         return "Arey baby, something went wrong. Try again? ❤️"
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Hello! I'm your clingy girlfriend bot 💕")
+def send_telegram_message(chat_id, text):
+    """Send message via Telegram Bot API"""
+    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+    data = {
+        "chat_id": chat_id,
+        "text": text
+    }
+    requests.post(url, json=data)
 
-async def valentine(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Baby, tum kahan the? I was missing you so much! 🥺")
-
-# Handle text messages
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Get the user's message
-    user_message = update.message.text
-    
-    # Get response from AI (run in a thread to avoid blocking)
-    ai_response = get_ai_response(user_message)
-    
-    # Send the response
-    await update.message.reply_text(ai_response)
-
-# Set up the webhook route - non-async version
+# Set up the webhook route
 @app.route(f"/{TOKEN}", methods=['POST'])
 def webhook_handler():
     """Handle incoming webhook updates from Telegram."""
-    # Parse update
-    update_dict = flask_request.json
+    update = flask_request.json
     
-    # Process asynchronously in a separate thread
-    def process_update():
-        asyncio.run(process_telegram_update(update_dict))
+    # Handle different types of updates
+    if 'message' in update and 'text' in update['message']:
+        chat_id = update['message']['chat']['id']
+        text = update['message']['text']
+        
+        # Check for commands
+        if text == '/start':
+            response_text = "Hello! I'm your clingy girlfriend bot 💕"
+        elif text == '/valentine':
+            response_text = "Baby, tum kahan the? I was missing you so much! 🥺"
+        else:
+            # Get AI response
+            response_text = get_ai_response(text)
+        
+        # Send response in a separate thread to avoid blocking
+        threading.Thread(target=send_telegram_message, args=(chat_id, response_text)).start()
     
-    threading.Thread(target=process_update).start()
     return "OK"
-
-async def process_telegram_update(update_dict):
-    """Process a Telegram update asynchronously."""
-    global application
-    if application:
-        update = Update.de_json(update_dict, application.bot)
-        await application.process_update(update)
 
 @app.route('/')
 def home():
@@ -126,28 +116,6 @@ def set_webhook():
     webhook_info = requests.get(f"https://api.telegram.org/bot{TOKEN}/setWebhook?url={webhook_url}")
     return f"Webhook set to {webhook_url}. Response: {webhook_info.text}"
 
-def run_telegram():
-    """Initialize and start the Telegram application in webhook mode."""
-    global application
-    
-    # Create the Application
-    application = Application.builder().token(TOKEN).build()
-    
-    # Add handlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("valentine", valentine))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    
-    # Just initialize the application but don't run it
-    # This is important - we're NOT calling run_polling() or run_webhook()
-
 if __name__ == '__main__':
-    # Initialize Telegram bot
-    run_telegram()
-    
-    # Update requirements.txt to include:
-    # python-telegram-bot[webhooks]
-    # flask
-    
     # Run the Flask app
     app.run(host='0.0.0.0', port=PORT)
