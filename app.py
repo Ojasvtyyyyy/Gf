@@ -1,21 +1,20 @@
 import os
 import requests
 from flask import Flask, request
-from telegram import Bot, Update
-from telegram.ext import Dispatcher, CommandHandler, CallbackContext
+from telegram import Update
+from telegram.ext import Application, CommandHandler, CallbackContext
 
 # Initialize Flask app
 app = Flask(__name__)
 
 # Get Telegram bot token from environment variable
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-BOT = Bot(TOKEN)
 
 # Bhagavad Gita API Base URL
 API_BASE_URL = "https://bhagavadgita.io/api/v2"
 
-# Initialize dispatcher
-dispatcher = Dispatcher(BOT, None, use_context=True)
+# Initialize bot application
+bot_app = Application.builder().token(TOKEN).build()
 
 # Function to fetch a random shloka
 def get_random_shloka():
@@ -37,19 +36,19 @@ def get_random_shloka():
     return "⚠️ Unable to fetch the shloka. Try again later."
 
 # Command handler for /shlok
-def shlok(update: Update, context: CallbackContext) -> None:
+async def shlok(update: Update, context: CallbackContext):
     """Handles the /shlok command."""
     message = get_random_shloka()
-    update.message.reply_text(message, parse_mode="Markdown")
+    await update.message.reply_text(message, parse_mode="Markdown")
 
-# Add command handler to dispatcher
-dispatcher.add_handler(CommandHandler("shlok", shlok))
+# Add command handler to bot application
+bot_app.add_handler(CommandHandler("shlok", shlok))
 
 @app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
     """Handle incoming Telegram updates via webhook."""
-    update = Update.de_json(request.get_json(), BOT)
-    dispatcher.process_update(update)
+    update = Update.de_json(request.get_json(), bot_app.bot)
+    bot_app.update_queue.put(update)
     return "OK", 200
 
 @app.route("/")
