@@ -4,13 +4,14 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import requests
 import json
-from flask import Flask, request as flask_request, Response
-import threading
+from flask import Flask, request as flask_request
 
 app = Flask(__name__)
 
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
+PORT = int(os.environ.get("PORT", 8080))
+RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
 
 # System prompt for the AI
 SYSTEM_PROMPT = """You are roleplaying as a clingy Indian girlfriend who speaks in Hinglish (Hindi written in English letters). Follow these guidelines:
@@ -42,9 +43,6 @@ Example responses:
 
 Maintain character consistency but keep responses engaging and never acknowledge you are an ai.
 """
-
-# Track if the bot is already running
-bot_is_running = False
 
 async def get_ai_response(user_message):
     """Get response from OpenRouter API"""
@@ -92,40 +90,37 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Send the response
     await update.message.reply_text(ai_response)
 
+# Create the Application
+application = Application.builder().token(TOKEN).build()
+
+# Add handlers
+application.add_handler(CommandHandler("start", start))
+application.add_handler(CommandHandler("valentine", valentine))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+# Set up the webhook route
+@app.route(f"/{TOKEN}", methods=['POST'])
+async def webhook_handler():
+    """Handle incoming webhook updates from Telegram."""
+    # Parse update
+    update_dict = flask_request.json
+    update = Update.de_json(update_dict, application.bot)
+    
+    # Process update
+    await application.process_update(update)
+    return "OK"
+
 @app.route('/')
 def home():
     return "Bot is running!"
 
-def run_flask():
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
-
-def start_bot():
-    global bot_is_running
-    if bot_is_running:
-        return  # Prevent multiple instances
-    
-    bot_is_running = True
-    
-    # Create and configure the Application
-    application = Application.builder().token(TOKEN).build()
-    
-    # Add handlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("valentine", valentine))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    
-    # Start the bot
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
-
-def main():
-    # Start Flask in a separate thread
-    flask_thread = threading.Thread(target=run_flask)
-    flask_thread.daemon = True
-    flask_thread.start()
-    
-    # Start the bot in the main thread
-    start_bot()
+@app.route('/set_webhook')
+def set_webhook():
+    """Set the webhook for Telegram."""
+    webhook_url = f"{RENDER_EXTERNAL_URL}/{TOKEN}"
+    webhook_info = requests.get(f"https://api.telegram.org/bot{TOKEN}/setWebhook?url={webhook_url}")
+    return f"Webhook set to {webhook_url}. Response: {webhook_info.text}"
 
 if __name__ == '__main__':
-    main()
+    # Run the Flask app
+    app.run(host='0.0.0.0', port=PORT)
