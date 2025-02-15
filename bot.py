@@ -4,7 +4,8 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import requests
 import json
-from flask import Flask, request as flask_request
+from flask import Flask, request as flask_request, jsonify
+import threading
 
 app = Flask(__name__)
 
@@ -44,8 +45,11 @@ Example responses:
 Maintain character consistency but keep responses engaging and never acknowledge you are an ai.
 """
 
-async def get_ai_response(user_message):
-    """Get response from OpenRouter API"""
+# Global application object
+application = None
+
+def get_ai_response(user_message):
+    """Get response from OpenRouter API (synchronous version)"""
     url = "https://openrouter.ai/api/v1/chat/completions"
     
     headers = {
@@ -84,31 +88,32 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Get the user's message
     user_message = update.message.text
     
-    # Get response from AI
-    ai_response = await get_ai_response(user_message)
+    # Get response from AI (run in a thread to avoid blocking)
+    ai_response = get_ai_response(user_message)
     
     # Send the response
     await update.message.reply_text(ai_response)
 
-# Create the Application
-application = Application.builder().token(TOKEN).build()
-
-# Add handlers
-application.add_handler(CommandHandler("start", start))
-application.add_handler(CommandHandler("valentine", valentine))
-application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-# Set up the webhook route
+# Set up the webhook route - non-async version
 @app.route(f"/{TOKEN}", methods=['POST'])
-async def webhook_handler():
+def webhook_handler():
     """Handle incoming webhook updates from Telegram."""
     # Parse update
     update_dict = flask_request.json
-    update = Update.de_json(update_dict, application.bot)
     
-    # Process update
-    await application.process_update(update)
+    # Process asynchronously in a separate thread
+    def process_update():
+        asyncio.run(process_telegram_update(update_dict))
+    
+    threading.Thread(target=process_update).start()
     return "OK"
+
+async def process_telegram_update(update_dict):
+    """Process a Telegram update asynchronously."""
+    global application
+    if application:
+        update = Update.de_json(update_dict, application.bot)
+        await application.process_update(update)
 
 @app.route('/')
 def home():
@@ -121,6 +126,28 @@ def set_webhook():
     webhook_info = requests.get(f"https://api.telegram.org/bot{TOKEN}/setWebhook?url={webhook_url}")
     return f"Webhook set to {webhook_url}. Response: {webhook_info.text}"
 
+def run_telegram():
+    """Initialize and start the Telegram application in webhook mode."""
+    global application
+    
+    # Create the Application
+    application = Application.builder().token(TOKEN).build()
+    
+    # Add handlers
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("valentine", valentine))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    
+    # Just initialize the application but don't run it
+    # This is important - we're NOT calling run_polling() or run_webhook()
+
 if __name__ == '__main__':
+    # Initialize Telegram bot
+    run_telegram()
+    
+    # Update requirements.txt to include:
+    # python-telegram-bot[webhooks]
+    # flask
+    
     # Run the Flask app
     app.run(host='0.0.0.0', port=PORT)
