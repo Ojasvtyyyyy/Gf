@@ -1,14 +1,13 @@
 import os
-from flask import Flask, request as flask_request, jsonify
+from flask import Flask, request as flask_request
 import requests
 import json
-import threading
 
 app = Flask(__name__)
 
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
-PORT = int(os.environ.get("PORT", 8080))
+PORT = int(os.environ.get("PORT", 5000))
 RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
 
 # System prompt for the AI
@@ -78,30 +77,34 @@ def send_telegram_message(chat_id, text):
         "chat_id": chat_id,
         "text": text
     }
-    requests.post(url, json=data)
+    response = requests.post(url, json=data)
+    print(f"Telegram API response: {response.text}")
+    return response
 
-# Set up the webhook route
 @app.route(f"/{TOKEN}", methods=['POST'])
 def webhook_handler():
     """Handle incoming webhook updates from Telegram."""
+    # Get the update from Telegram
     update = flask_request.json
+    print(f"Received update: {json.dumps(update, indent=2)}")
     
-    # Handle different types of updates
+    # Check if this is a message with text
     if 'message' in update and 'text' in update['message']:
         chat_id = update['message']['chat']['id']
-        text = update['message']['text']
+        user_message = update['message']['text']
         
-        # Check for commands
-        if text == '/start':
-            response_text = "Hello! I'm your clingy girlfriend bot 💕"
-        elif text == '/valentine':
-            response_text = "Baby, tum kahan the? I was missing you so much! 🥺"
+        # Handle commands
+        if user_message == '/start':
+            send_telegram_message(chat_id, "Hello! I'm your clingy girlfriend bot 💕")
+        elif user_message == '/valentine':
+            send_telegram_message(chat_id, "Baby, tum kahan the? I was missing you so much! 🥺")
         else:
             # Get AI response
-            response_text = get_ai_response(text)
-        
-        # Send response in a separate thread to avoid blocking
-        threading.Thread(target=send_telegram_message, args=(chat_id, response_text)).start()
+            ai_response = get_ai_response(user_message)
+            print(f"AI response: {ai_response}")
+            
+            # Send response back to user
+            send_telegram_message(chat_id, ai_response)
     
     return "OK"
 
@@ -113,8 +116,8 @@ def home():
 def set_webhook():
     """Set the webhook for Telegram."""
     webhook_url = f"{RENDER_EXTERNAL_URL}/{TOKEN}"
-    webhook_info = requests.get(f"https://api.telegram.org/bot{TOKEN}/setWebhook?url={webhook_url}")
-    return f"Webhook set to {webhook_url}. Response: {webhook_info.text}"
+    response = requests.get(f"https://api.telegram.org/bot{TOKEN}/setWebhook?url={webhook_url}")
+    return f"Webhook set to {webhook_url}. Response: {response.text}"
 
 if __name__ == '__main__':
     # Run the Flask app
