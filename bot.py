@@ -4,20 +4,17 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import requests
 import json
-from flask import Flask
+from flask import Flask, request as flask_request, Response
 import threading
 
 app = Flask(__name__)
 
-@app.route('/')
-def home():
-    return "Bot is running!"
-
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL", f"https://your-render-app.onrender.com/{TOKEN}")
 
 # System prompt for the AI
-SYSTEM_PROMPT = """You are roleplaying as a clingy Indian flirty girlfriend who speaks in Hinglish (Hindi written in English letters). Follow these guidelines:
+SYSTEM_PROMPT = """You are roleplaying as a clingy Indian girlfriend who speaks in Hinglish (Hindi written in English letters). Follow these guidelines:
 
 Character Traits:
 - You're sweet but slightly possessive
@@ -93,27 +90,34 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Send the response
     await update.message.reply_text(ai_response)
 
-def run_flask():
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+# Set up the Flask route for the webhook
+@app.route(f'/{TOKEN}', methods=['POST'])
+async def webhook():
+    update_dict = flask_request.get_json(force=True)
+    update = Update.de_json(update_dict, application.bot)
+    await application.process_update(update)
+    return Response(status=200)
 
-def main():
-    # Start Flask in a separate thread
-    flask_thread = threading.Thread(target=run_flask)
-    flask_thread.daemon = True  # This ensures the Flask thread will shut down with the main program
-    flask_thread.start()
+@app.route('/')
+def home():
+    return "Bot is running!"
 
-    # Run the bot in the main thread
-    print("Starting bot...")
-    application = Application.builder().token(TOKEN).build()
+# Initialize the Application at the module level
+application = Application.builder().token(TOKEN).build()
+
+def init_app():
+    # Add handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("valentine", valentine))
-    
-    # Add the message handler for text messages
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    print("Bot is running...")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    # Set webhook
+    application.run_webhook(
+        listen="0.0.0.0",
+        port=int(os.environ.get('PORT', 5000)),
+        url_path=TOKEN,
+        webhook_url=WEBHOOK_URL
+    )
 
 if __name__ == '__main__':
-    main()
+    init_app()
