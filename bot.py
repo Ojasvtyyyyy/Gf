@@ -22,25 +22,24 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def valentine(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Baby, tum kahan the? I was missing you so much! 🥺")
 
-def run_bot():
+def run_flask():
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
+
+def main():
+    # Start Flask in a separate thread
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.daemon = True  # This ensures the Flask thread will shut down with the main program
+    flask_thread.start()
+
+    # Run the bot in the main thread
     print("Starting bot...")
-    # Create new event loop for the thread
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    
     application = Application.builder().token(TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("valentine", valentine))
     
     print("Bot is running...")
-    # Run the bot in the event loop
-    loop.run_until_complete(application.run_polling(allowed_updates=Update.ALL_TYPES))
-
-def run_flask():
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
-    bot_thread = threading.Thread(target=run_bot)
-    bot_thread.start()
-    run_flask()
+    main()
